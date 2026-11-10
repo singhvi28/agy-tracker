@@ -218,3 +218,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# AGY Tracker local user data & logs
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+chat_history.html
+CHATS.md
+shortcuts/
+brain/
+history.jsonl
+.system_generated/
