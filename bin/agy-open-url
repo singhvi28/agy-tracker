@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+import sys
+import os
+import re
+import subprocess
+import sqlite3
+
+def get_workspace_for_conversation(cid: str) -> str:
+    db_path = os.path.expanduser("~/.gemini/antigravity-cli/chat_tracker.db")
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT workspace FROM conversations WHERE conversation_id = ?", (cid,))
+            row = cursor.fetchone()
+            conn.close()
+            if row and row[0] and os.path.isdir(row[0]):
+                return row[0]
+        except Exception:
+            pass
+    return os.path.expanduser("~")
+
+def parse_conversation_id(arg: str) -> str:
+    if not arg:
+        return ""
+    # strip agy://resume/ or agy:// or antigravity://
+    arg = arg.strip()
+    match = re.search(r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})', arg, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return arg.replace("agy://resume/", "").replace("agy://", "").replace("antigravity://resume/", "").replace("antigravity://", "").strip("/")
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: agy-open-url <agy://resume/CONVERSATION_ID | CONVERSATION_ID>")
+        sys.exit(1)
+
+    raw_arg = sys.argv[1]
+    is_danger = "--danger" in sys.argv or "-d" in sys.argv
+    cid = parse_conversation_id(raw_arg)
+    if not cid:
+        print(f"Error: Could not extract valid conversation ID from '{raw_arg}'")
+        sys.exit(1)
+
+    workspace = get_workspace_for_conversation(cid)
+    danger_flag = " --danger" if is_danger else ""
+    danger_label = " (danger mode)" if is_danger else ""
+    
+    cmd_to_run = f'echo -e "\\033[1;36m[AGY Chat Tracker]\\033[0m Resuming conversation {cid}{danger_label}..."; agy --conversation {cid}{danger_flag}; exec /bin/bash'
+
+    # Try terminal emulators
+    if subprocess.call(["which", "gnome-terminal"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+        subprocess.Popen([
+            "gnome-terminal",
+            f"--working-directory={workspace}",
+            f"--title=AGY Chat: {cid[:8]}",
+            "--",
+            "/bin/bash",
+            "-c",
+            cmd_to_run
+        ], start_new_session=True)
+    elif subprocess.call(["which", "x-terminal-emulator"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+        subprocess.Popen([
+            "x-terminal-emulator",
+            "-e",
+            f"/bin/bash -c 'cd \"{workspace}\" && {cmd_to_run}'"
+        ], start_new_session=True)
+    elif subprocess.call(["which", "xterm"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
+        subprocess.Popen([
+            "xterm",
+            "-e",
+            f"/bin/bash -c 'cd \"{workspace}\" && {cmd_to_run}'"
+        ], start_new_session=True)
+    else:
+        # Fallback in current shell
+        os.chdir(workspace)
+        exec_args = ["agy", "--conversation", cid]
+        if is_danger:
+            exec_args.append("--danger")
+        os.execvp("agy", exec_args)
+
+if __name__ == "__main__":
+    main()
